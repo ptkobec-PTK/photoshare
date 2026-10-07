@@ -7,7 +7,7 @@ const REDIRECT = 'http://localhost:5555/oauth2callback';
 const o = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET, REDIRECT);
 const url = o.generateAuthUrl({
   access_type: 'offline', prompt: 'consent',
-  scope: ['https://www.googleapis.com/auth/drive.file'],
+  scope: ['https://www.googleapis.com/auth/drive'],
 });
 console.log('\nเปิดลิงก์นี้ในเบราว์เซอร์ แล้วล็อกอินด้วยบัญชีที่จะใช้เก็บรูป:\n\n' + url + '\n');
 
