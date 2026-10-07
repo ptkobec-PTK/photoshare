@@ -40,7 +40,7 @@ async function home() {
   const search = el('input', { type: 'search', class: 'search', placeholder: '🔍 ค้นหาชื่ออัลบั้ม...', autocomplete: 'off', oninput: () => show() });
   const box = el('div', {}, el('p', { class: 'mut' }, 'กำลังโหลด...'));
   app.replaceChildren(
-    el('div', { class: 'bar' }, el('h1', {}, '📷 PhotoShare'), el('button', { onclick: newAlbum }, '+ สร้างอัลบั้ม')),
+    el('div', { class: 'bar' }, el('h1', {}, '📷 อัลบั้ม PTK'), el('button', { onclick: newAlbum }, '+ สร้างอัลบั้ม')),
     search, box);
   const albums = await api('/albums');
   const card = (a) => el('a', { class: 'card', href: '#/a/' + a.id },
