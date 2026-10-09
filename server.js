@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import multer from 'multer';
+import archiver from 'archiver';
 import sharp from 'sharp';
 import rateLimit from 'express-rate-limit';
 import { google } from 'googleapis';
@@ -135,6 +136,7 @@ async function fillCovers(albums) {
 const app = express();
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '10kb' }));
+app.use(express.urlencoded({ extended: false, limit: '200kb' }));
 app.use(express.static('public', { maxAge: 0 }));
 app.param('id', (req, res, next, id) => (/^[\w-]{10,80}$/.test(id) ? next() : res.status(404).json({ error: 'ไม่พบข้อมูล' })));
 const writeLimit = rateLimit({ windowMs: 10 * 60 * 1000, limit: 300, standardHeaders: true, legacyHeaders: false });
@@ -267,6 +269,39 @@ app.delete('/api/photos/:id', writeLimit, h(async (req, res) => {
   }
   fs.rm(path.join(CACHE_DIR, 't_' + p.id), { force: true }); fs.rm(path.join(CACHE_DIR, 'p_' + p.id), { force: true });
   res.json({ ok: true });
+}));
+
+// ดาวน์โหลดหลายรูปรวมเป็นไฟล์ zip (สตรีมทีละรูป ไม่กินเมมโมรี่)
+const MAX_ZIP = 200;
+app.post('/api/photos/zip', writeLimit, h(async (req, res) => {
+  const ids = [...new Set(String(req.body.ids || '').split(',').filter((x) => /^[\w-]{10,80}$/.test(x)))].slice(0, MAX_ZIP);
+  if (!ids.length) fail(400, 'ไม่ได้เลือกรูป');
+  const photos = (await Promise.allSettled(ids.map(getPhoto))).filter((r) => r.status === 'fulfilled').map((r) => r.value);
+  if (!photos.length) fail(404);
+  const zipName = safeName(String(req.body.name || 'photos')) + '.zip';
+  res.set({
+    'Content-Type': 'application/zip',
+    'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(zipName)}`,
+  });
+  const zip = archiver('zip', { store: true }); // รูปบีบอัดมาแล้ว ไม่ต้องบีบซ้ำ
+  zip.on('error', () => res.destroy());
+  res.on('close', () => zip.abort());
+  zip.pipe(res);
+  const used = new Map();
+  const uniq = (n) => {
+    const c = (used.get(n) || 0) + 1; used.set(n, c);
+    if (c === 1) return n;
+    const i = n.lastIndexOf('.');
+    return i > 0 ? `${n.slice(0, i)} (${c})${n.slice(i)}` : `${n} (${c})`;
+  };
+  for (const p of photos) {
+    const r = await drive.files.get({ fileId: p.id, alt: 'media' }, { responseType: 'stream' });
+    await new Promise((resolve, reject) => {
+      r.data.on('end', resolve).on('error', reject);
+      zip.append(r.data, { name: uniq(safeName(p.name)) });
+    });
+  }
+  await zip.finalize();
 }));
 
 // แสดง / ดาวน์โหลดรูป
