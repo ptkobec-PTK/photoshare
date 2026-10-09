@@ -40,7 +40,7 @@ async function home() {
   const search = el('input', { type: 'search', class: 'search', placeholder: '🔍 ค้นหาชื่ออัลบั้ม...', autocomplete: 'off', oninput: () => show() });
   const box = el('div', {}, el('p', { class: 'mut' }, 'กำลังโหลด...'));
   app.replaceChildren(
-    el('div', { class: 'bar' }, el('h1', {}, '📷 อัลบั้ม PTK'), el('button', { onclick: newAlbum }, '+ สร้างอัลบั้ม')),
+    el('div', { class: 'bar' }, el('h1', {}, '📷 PhotoShare'), el('button', { onclick: newAlbum }, '+ สร้างอัลบั้ม')),
     search, box);
   const albums = await api('/albums');
   const card = (a) => el('a', { class: 'card', href: '#/a/' + a.id },
@@ -85,19 +85,40 @@ function draw() {
       el('a', { href: '#/', class: 'back' }, '← อัลบั้ม'),
       el('h1', {}, album.name),
       el('button', { onclick: () => fileIn.click() }, 'อัปโหลด'), fileIn,
-      S.photos.some((p) => p.canDelete) && el('button', { class: 'sec', onclick: () => { S.sel = S.sel ? null : new Set(); draw(); } }, sel ? 'ยกเลิก' : 'เลือกรูป'),
-      sel && el('button', { class: 'danger', onclick: delSelected }, 'ลบที่เลือก (', el('span', { id: 'selcount' }, String(sel.size)), ')'),
+      S.photos.length > 0 && el('button', { class: 'sec', onclick: () => { S.sel = S.sel ? null : new Set(); draw(); } }, sel ? 'ยกเลิก' : 'เลือกรูป'),
+      sel && el('button', { class: 'sec', onclick: selectAll }, 'เลือกทั้งหมด'),
+      sel && el('button', { onclick: downloadSelected }, 'ดาวน์โหลด (', el('span', { class: 'selcount' }, String(sel.size)), ')'),
+      sel && S.photos.some((p) => p.canDelete) && el('button', { class: 'danger', onclick: delSelected }, 'ลบ (', el('span', { class: 'selcount' }, String(sel.size)), ')'),
       album.canDelete && el('button', { class: 'danger', onclick: delAlbum }, 'ลบอัลบั้ม')),
     el('p', { class: 'mut', id: 'status' }, statusText),
     grid,
     S.next && el('button', { class: 'sec more', onclick: async () => { await loadMore(); draw(); } }, 'โหลดเพิ่ม'),
     !S.photos.length && el('p', { class: 'mut' }, 'ยังไม่มีรูป ลากรูปมาวางหรือกด "อัปโหลด"'));
 }
+const updCount = () => document.querySelectorAll('.selcount').forEach((s) => { s.textContent = S.sel.size; });
 function pick(p, node) {
-  if (!p.canDelete) return;
   S.sel.has(p.id) ? S.sel.delete(p.id) : S.sel.add(p.id);
   node.classList.toggle('on', S.sel.has(p.id));
-  $('#selcount').textContent = S.sel.size;
+  updCount();
+}
+function selectAll() {
+  S.sel = S.sel.size === S.photos.length ? new Set() : new Set(S.photos.map((p) => p.id));
+  document.querySelectorAll('.photos .ph').forEach((n, i) => n.classList.toggle('on', S.sel.has(S.photos[i].id)));
+  updCount();
+}
+// 1 รูป = ดาวน์โหลดไฟล์ตรง ๆ, หลายรูป = ให้ server รวมเป็น zip
+function downloadSelected() {
+  const ids = [...S.sel];
+  if (!ids.length) return toast('ยังไม่ได้เลือกรูป');
+  if (ids.length > 200) return toast('ดาวน์โหลดได้ครั้งละไม่เกิน 200 รูป');
+  if (ids.length === 1) {
+    const a = el('a', { href: `/api/photos/${ids[0]}/file?download=1` });
+    document.body.append(a); a.click(); a.remove();
+    return;
+  }
+  const f = el('form', { method: 'POST', action: '/api/photos/zip', style: 'display:none' },
+    el('input', { name: 'ids', value: ids.join(',') }), el('input', { name: 'name', value: S.album.name }));
+  document.body.append(f); f.submit(); f.remove();
 }
 
 // ---------- อัปโหลด (คิว 3 ไฟล์พร้อมกัน) ----------
@@ -157,8 +178,10 @@ async function delAlbum() {
   try { await api('/albums/' + S.id, { method: 'DELETE' }); location.hash = '#/'; } catch (e) { toast(e); }
 }
 async function delSelected() {
-  const ids = [...S.sel];
-  if (!ids.length || !confirm(`ลบ ${ids.length} รูปที่เลือก?`)) return;
+  const ids = [...S.sel].filter((id) => S.photos.find((p) => p.id === id)?.canDelete);
+  const skipped = S.sel.size - ids.length;
+  if (!ids.length) return toast('รูปที่เลือกไม่มีสิทธิ์ลบ');
+  if (!confirm(`ลบ ${ids.length} รูปที่เลือก?` + (skipped ? `\n(อีก ${skipped} รูปไม่มีสิทธิ์ลบ จะไม่ถูกลบ)` : ''))) return;
   const failed = [];
   for (let i = 0; i < ids.length; i += 4)
     await Promise.all(ids.slice(i, i + 4).map((id) => api('/photos/' + id, { method: 'DELETE' }).catch(() => failed.push(id))));
